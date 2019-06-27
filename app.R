@@ -7,33 +7,33 @@ library(cronR)
 library(shinythemes)
 library(scales)
 library(stringr)
-library(shinyWidgets)
+library(kableExtra)
 
 source('render-site-map.R')
 
-cache_path <- "/srv/shiny-server/cache/cache.RData"
-cache_mod_time <- file.mtime(cache_path)
-full_cache_data <- NA
+#cache_path <- "/srv/shiny-server/cache/cache.RData"
+#cache_mod_time <- file.mtime(cache_path)
+#full_cache_data <- NA
 
-load_cache <- function(full_cache_data) {
-    curr_mod_time <- file.mtime(cache_path)
-
-    if (curr_mod_time > cache_mod_time || is.na(full_cache_data)) {
-        cat(file=stderr(), "Loading cache.RData file.", "\n")
-        load(cache_path)
-        # TODO: See if it works if we omit this line
-        # full_cache_data <- full_cache_data[c("Danforth Sorghum Pilot", "KSU 2016", "MAC Season 1", "MAC Season 2", "MAC Season 3", "MAC Season 4", "MAC Season 6")]
-        cache_mod_time <- curr_mod_time
-        cat(file=stderr(), "Loading cache.RData file completed.", "\n")
-        return(full_cache_data)
-    } else {
-        cat(file=stderr(), "Latest cache.RData file already loaded.", "\n")
-        return(full_cache_data)
-    }
-}
+#load_cache <- function(full_cache_data) {
+#    curr_mod_time <- file.mtime(cache_path)
+#
+#    if (curr_mod_time > cache_mod_time || is.na(full_cache_data)) {
+#        cat(file=stderr(), "Loading cache.RData file.", "\n")
+#        load(cache_path)
+#        # TODO: See if it works if we omit this line
+#        # full_cache_data <- full_cache_data[c("Danforth Sorghum Pilot", "KSU 2016", "MAC Season 1", "MAC Season 2", "MAC Season 3", "MAC Season 4", "MAC Season 6")]
+#        cache_mod_time <- curr_mod_time
+#        cat(file=stderr(), "Loading cache.RData file completed.", "\n")
+#        return(full_cache_data)
+#    } else {
+#        cat(file=stderr(), "Latest cache.RData file already loaded.", "\n")
+#        return(full_cache_data)
+#    }
+#}
 
 # directory containing full-field images
-image_dir <- 'data/terraref/sites/ua-mac/Level_2/rgb_fullfield/_thumbs'
+image_dir <- '~/data/terraref/sites/ua-mac/Level_2/rgb_fullfield/_thumbs'
 # dates that have full-field images
 image_dates <- as.Date(unique(unlist(str_extract_all(list.files(image_dir), '[0-9]{4}-[0-9]{2}-[0-9]{2}'))))
   
@@ -76,7 +76,7 @@ render_subexp_ui <- function(subexp_name, exp_name) {
         tabPanel('Map',
           div(class = 'map-container push-out',
             uiOutput(paste0('map_date_slider_', id_str)),
-            uiOutput(paste0('scan_select_choices_', id_str)),
+            htmlOutput(paste0('scan_options_table_', id_str)),
             leafletOutput(paste0('site_map_', id_str), width = '350px', height = '700px')
           )
         )
@@ -274,47 +274,61 @@ render_map <- function(subexp_name, id_str, input, output, full_cache_data) {
       traits <- subset(traits, cultivar_name == selected_cultivar)
     }
     
-
-    traits_dates <- image_dates[image_dates %in% as.Date(unique(traits$date))]
+    #traits_image_dates <- image_dates[image_dates %in% as.Date(unique(traits$date))] # to remove
     
     sliderInput(paste0('map_date_', id_str), 'Date',
-                min(traits_dates),
-                max(traits_dates),
-                max(traits_dates))
+                min(as.Date(traits$date)),
+                max(as.Date(traits$date)),
+                min(as.Date(traits$date)))
     
-    sliderTextInput(inputId = paste0('map_date_', id_str),
-                    label = 'Date',
-                    choices = traits_dates)
+    #sliderTextInput(inputId = paste0('map_date_', id_str),
+    #                label = 'Date',
+    #                choices = traits_dates) # to remove
     
   })
   
-  output[[ paste0('scan_select_choices_', id_str) ]] <- renderUI({
+  output[[ paste0('scan_options_table_', id_str) ]] <- renderText({
     
+    req(input[[ paste0('selected_variable_', id_str) ]]) 
+    req(input[[ paste0('selected_cultivar_', id_str) ]])
     req(input[[ paste0('map_date_', id_str) ]]) 
+    
+    selected_variable <- input[[ paste0('selected_variable_', id_str) ]] 
+    selected_cultivar <- input[[ paste0('selected_cultivar_', id_str) ]]
     render_date <- input[[ paste0('map_date_', id_str) ]]
     
-    image_paths <- grep(render_date, list.files(image_dir), value = TRUE)
-    image_scan <- unlist(str_match_all(image_paths, 'rgb_fullfield_L2_ua-mac_[0-9]{4}-[0-9]{2}-[0-9]{2}_(.*)\\.tif'))
+    traits <- full_cache_data[[ subexp_name ]][[ 'trait_data' ]][[ selected_variable ]][[ 'traits' ]]
     
-    scan_options <- as.list(image_scan[-grep('\\.tif', image_scan)])
+    if (selected_cultivar != 'None'){
+      traits <- subset(traits, cultivar_name == selected_cultivar)
+    }
     
-    radioButtons(paste0('selected_scan_', id_str),
-                 'Scan choices',
-                 choices = scan_options)
+    # display scan options if selected date has/have fullfield images
+    if(render_date %in% image_dates){
+      image_paths <- grep(render_date, list.files(image_dir), value = TRUE)
+      image_scan <- unlist(str_match_all(image_paths,
+                                         'rgb_fullfield_L2_ua-mac_[0-9]{4}-[0-9]{2}-[0-9]{2}_(.*)_rgb_thumb\\.tif'))
+      scan_options <- image_scan[-grep('\\.tif', image_scan)]
+      scan_options_clean <- str_replace_all(scan_options, '_', ' ')
+      scan_options_df <- data.frame(scan_number = 1:length(scan_options_clean),
+                                    scan_name = scan_options_clean)
+      scan_options_kable <- kable(scan_options_df) %>% kable_styling()
+    }else{
+      return()
+    }
     
   })
   
   # render heat map of sites from trait records in a given subexperiment, for the selected date, variable and cultivar
   output[[ paste0('site_map_', id_str) ]] <- renderLeaflet({
     
+    print('In renderingLeafLet')
     req(input[[ paste0('selected_variable_', id_str) ]])
     req(input[[ paste0('selected_cultivar_', id_str) ]])
-    req(input[[ paste0('selected_scan_', id_str) ]])
     req(input[[ paste0('map_date_', id_str) ]])
     
     selected_variable <- input[[ paste0('selected_variable_', id_str) ]]
     selected_cultivar <- input[[ paste0('selected_cultivar_', id_str) ]]
-    scan_name <- input[[ paste0('selected_scan_', id_str) ]]
     render_date <- input [[ paste0('map_date_', id_str) ]]
     
     traits <- full_cache_data[[ subexp_name ]][[ 'trait_data' ]][[ selected_variable ]][[ 'traits' ]]
@@ -331,14 +345,12 @@ render_map <- function(subexp_name, id_str, input, output, full_cache_data) {
       
     legend_title <- paste0(selected_variable, ' ', units)
     
-    image_path <- paste0(image_dir,
-                         '/rgb_fullfield_L2_ua-mac_',
-                         render_date,
-                         '_',
-                         scan_name,
-                         '.tif')
-    
-    render_site_map(traits, render_date, legend_title, image_path)
+    if(render_date %in% image_dates){
+      image_paths <- grep(render_date, list.files(image_dir), value = TRUE)
+      render_site_map(traits, render_date, legend_title, image_paths)
+    }else{
+      render_site_map(traits, render_date, legend_title)
+    }
   })
 }
 
@@ -373,9 +385,9 @@ render_experiment_output <- function(experiment_name, input, output, full_cache_
 server <- function(input, output) {
   
   # load 'full_cache_data' object from cache file
-  full_cache_data <- load_cache(full_cache_data) 
-  #load('cache_full.RData') # use when testing - comment out cache chunk on top
-  #full_cache_data <- full_cache_data["MAC Season 6"] # use when testing - comment out cache chunk on top
+  #full_cache_data <- load_cache(full_cache_data) 
+  load('cache_full.RData') # use when testing - comment out cache chunk on top
+  full_cache_data <- full_cache_data["MAC Season 6"] # use when testing - comment out cache chunk on top
 
   # render UI for all available experiments
   output$page_content <- renderUI({
