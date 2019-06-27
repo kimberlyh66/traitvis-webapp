@@ -322,7 +322,6 @@ render_map <- function(subexp_name, id_str, input, output, full_cache_data) {
   # render heat map of sites from trait records in a given subexperiment, for the selected date, variable and cultivar
   output[[ paste0('site_map_', id_str) ]] <- renderLeaflet({
     
-    print('In renderingLeafLet')
     req(input[[ paste0('selected_variable_', id_str) ]])
     req(input[[ paste0('selected_cultivar_', id_str) ]])
     req(input[[ paste0('map_date_', id_str) ]])
